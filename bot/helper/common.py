@@ -29,6 +29,7 @@ from ..core.config_manager import Config, BinConfig
 from ..core.telegram_manager import TgClient
 from .ext_utils.bot_utils import new_task, sync_to_async, get_size_bytes
 from .ext_utils.bulk_links import extract_bulk_links
+from .ext_utils.file_types import normalize_types
 from .mirror_leech_utils.gdrive_utils.list import GoogleDriveList
 from .mirror_leech_utils.rclone_utils.list import RcloneList
 from .mirror_leech_utils.status_utils.sevenz_status import SevenZStatus
@@ -76,6 +77,7 @@ class TaskConfig:
         self.up_dir = ""
         self.link = ""
         self.up_dest = ""
+        self.leech_dest = ""
         self.rc_flags = ""
         self.tag = ""
         self.name = ""
@@ -110,6 +112,15 @@ class TaskConfig:
         self.compress = False
         self.select = False
         self.seed = False
+        self.files_per_batch = 0
+        self.batch_max_size = 0
+        self.file_types = []
+        self.batch_mode = False
+        self.batch_current = 0
+        self.batch_total = 0
+        self.batch_selected_size = 0
+        self.batch_completed_size = 0
+        self.skip_uploaded_files = False
         self.compress = False
         self.extract = False
         self.join = False
@@ -128,6 +139,8 @@ class TaskConfig:
         self.as_doc = False
         self.is_file = False
         self.bot_trans = False
+        self.bot_pm = Config.BOT_PM or self.user_dict.get("BOT_PM")
+        self.pm_msg = None
         self.user_trans = False
         self.is_rss = getattr(self.message, "_rss_trigger", False)
         self.progress = True
@@ -143,6 +156,34 @@ class TaskConfig:
             "CHANNEL",
             "FORUM",
         ]
+
+    def enable_batch_mode(self):
+        self.batch_mode = True
+        self.seed = False
+        self.stop_duplicate = False
+        self.join = False
+        self.extract = False
+        self.compress = False
+        self.ffmpeg_cmds = None
+        self.convert_audio = False
+        self.convert_video = False
+        self.sample_video = False
+        self.screen_shots = False
+        if not self.file_types:
+            raw_types = (
+                self.user_dict.get("TORRENT_FILE_TYPES")
+                if "TORRENT_FILE_TYPES" in self.user_dict
+                else Config.TORRENT_FILE_TYPES
+            )
+            self.file_types = normalize_types(raw_types)
+        skip_uploaded = (
+            self.user_dict.get("SKIP_UPLOADED_FILES")
+            if "SKIP_UPLOADED_FILES" in self.user_dict
+            else Config.SKIP_UPLOADED_FILES
+        )
+        if isinstance(skip_uploaded, str):
+            skip_uploaded = skip_uploaded.lower() in ("true", "1", "yes", "on")
+        self.skip_uploaded_files = bool(skip_uploaded)
 
     def get_token_path(self, dest):
         if dest.startswith("mt:"):
@@ -200,6 +241,28 @@ class TaskConfig:
         self.included_extensions = self.user_dict.get("INCLUDED_EXTENSIONS") or (
             included_extensions if "INCLUDED_EXTENSIONS" not in self.user_dict else []
         )
+        files_per_batch = (
+            self.user_dict.get("FILES_PER_BATCH")
+            if "FILES_PER_BATCH" in self.user_dict
+            else Config.FILES_PER_BATCH
+        )
+        batch_max_size = (
+            self.user_dict.get("BATCH_MAX_SIZE")
+            if "BATCH_MAX_SIZE" in self.user_dict
+            else Config.BATCH_MAX_SIZE
+        )
+        try:
+            self.files_per_batch = max(0, int(files_per_batch or 0))
+        except (TypeError, ValueError):
+            self.files_per_batch = 0
+        try:
+            self.batch_max_size = max(0, int(batch_max_size or 0))
+        except (TypeError, ValueError):
+            self.batch_max_size = 0
+        if self.select:
+            self.file_types = []
+        if self.batch_mode or self.file_types:
+            self.seed = False
         if not self.rc_flags:
             if self.user_dict.get("RCLONE_FLAGS"):
                 self.rc_flags = self.user_dict["RCLONE_FLAGS"]
@@ -307,7 +370,7 @@ class TaskConfig:
             self.is_gofile = True
 
         if not self.is_leech and not self.is_buzzheavier and not self.is_gofile:
-            self.stop_duplicate = (
+            self.stop_duplicate = not self.batch_mode and (
                 self.user_dict.get("STOP_DUPLICATE")
                 or "STOP_DUPLICATE" not in self.user_dict
                 and Config.STOP_DUPLICATE
@@ -372,15 +435,31 @@ class TaskConfig:
                 ) != self.get_config_path(self.up_dest):
                     raise ValueError("You must use the same config to clone!")
         elif not self.is_buzzheavier and not self.is_gofile:
-            self.up_dest = (
-                self.up_dest
-                or self.user_dict.get("LEECH_DUMP_CHAT")
-                or (
-                    Config.LEECH_DUMP_CHAT
-                    if "LEECH_DUMP_CHAT" not in self.user_dict
-                    else None
+            self.leech_dest = self.up_dest or self.user_dict.get("LEECH_DUMP_CHAT")
+            self.up_dest = Config.LEECH_DUMP_CHAT
+            if isinstance(self.leech_dest, str):
+                leech_chat = self.leech_dest.split("|", 1)[0].strip()
+                if leech_chat[:2].lower() in ("b:", "u:", "h:"):
+                    leech_chat = leech_chat[2:].strip()
+                if leech_chat.lower() == "pm":
+                    self.leech_dest = self.user_id
+                elif leech_chat.lstrip("-").isdigit():
+                    self.leech_dest = int(leech_chat)
+                else:
+                    self.leech_dest = leech_chat
+            if (
+                not self.bot_pm
+                and self.message.chat.type.name not in ("PRIVATE", "BOT")
+                and not self.leech_dest
+            ):
+                raise ValueError(
+                    "❗ <b>Leech Destination required</b>\n\n"
+                    "You are using a leech command in a group without a dump chat. "
+                    "Set <b>Leech Destination</b> from /usettings → Leech "
+                    "(chat id, @username or <code>pm</code>), or pass "
+                    "<code>-up &lt;chat&gt;</code> with the command.\n"
+                    "This is mandatory while <b>BOT_PM</b> is disabled by the owner."
                 )
-            )
             self.hybrid_leech = TgClient.IS_PREMIUM_USER and (
                 self.user_dict.get("HYBRID_LEECH")
                 or Config.HYBRID_LEECH
@@ -580,6 +659,9 @@ class TaskConfig:
                 self.thumb = (
                     await create_thumb(msg) if msg.photo or msg.document else ""
                 )
+
+    def get_task_link(self):
+        return self.message.link or f"{self.message.chat.id}:{self.message.id}"
 
     async def get_tag(self, text: list):
         if self.user:

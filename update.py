@@ -35,6 +35,7 @@ basicConfig(
 def load_config() -> Dict[str, Any]:
     """Load configuration from config module or environment variables."""
     try:
+
         settings = import_module("config")
         return {
             key: value.strip() if isinstance(value, str) else value
@@ -48,7 +49,7 @@ def load_config() -> Dict[str, Any]:
             "DATABASE_URL": getenv("DATABASE_URL", ""),
             "DATABASE_NAME": getenv("DATABASE_NAME", "cloudbot"),
             "UPSTREAM_REPO": getenv("UPSTREAM_REPO", ""),
-            "UPSTREAM_BRANCH": getenv("UPSTREAM_BRANCH", ""),
+            "UPSTREAM_BRANCH": getenv("UPSTREAM_BRANCH", "master"),
         }
 
 
@@ -60,6 +61,7 @@ if not BOT_TOKEN:
     exit(1)
 
 BOT_ID = BOT_TOKEN.split(":", 1)[0]
+
 DATABASE_NAME = config_file.get("DATABASE_NAME", "cloudbot")
 
 if DATABASE_URL := config_file.get("DATABASE_URL", "").strip():
@@ -71,20 +73,20 @@ if DATABASE_URL := config_file.get("DATABASE_URL", "").strip():
         if (
             old_config is not None and old_config == config_file or old_config is None
         ) and config_dict is not None:
-            if not config_file.get("UPSTREAM_REPO") and config_dict.get("UPSTREAM_REPO"):
-                config_file["UPSTREAM_REPO"] = config_dict["UPSTREAM_REPO"]
-            if not config_file.get("UPSTREAM_BRANCH") and config_dict.get("UPSTREAM_BRANCH"):
-                config_file["UPSTREAM_BRANCH"] = config_dict["UPSTREAM_BRANCH"]
+            config_file["UPSTREAM_REPO"] = config_dict["UPSTREAM_REPO"]
+            config_file["UPSTREAM_BRANCH"] = config_dict["UPSTREAM_BRANCH"]
         conn.close()
     except Exception as e:
         log_error(f"Database ERROR: {e}")
 
 UPSTREAM_REPO = config_file.get("UPSTREAM_REPO", "").strip()
-UPSTREAM_BRANCH = config_file.get("UPSTREAM_BRANCH", "").strip() or "main"
+
+UPSTREAM_BRANCH = config_file.get("UPSTREAM_BRANCH", "").strip() or "master"
 
 if UPSTREAM_REPO and "anasty17/mirror-leech-telegram-bot" not in UPSTREAM_REPO:
     if path.exists(".git"):
         srun(["rm", "-rf", ".git"])
+
     update = srun(
         [
             f"git init -q \
@@ -94,10 +96,11 @@ if UPSTREAM_REPO and "anasty17/mirror-leech-telegram-bot" not in UPSTREAM_REPO:
                      && git commit -sm update -q \
                      && git remote add origin {UPSTREAM_REPO} \
                      && git fetch origin -q \
-                     && (git reset --hard origin/{UPSTREAM_BRANCH} -q || git reset --hard origin/master -q || git reset --hard origin/main -q)"
+                     && git reset --hard origin/{UPSTREAM_BRANCH} -q"
         ],
         shell=True,
     )
+
     if update.returncode == 0:
         log_info("Successfully updated with latest commit from UPSTREAM_REPO")
     else:

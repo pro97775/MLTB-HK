@@ -436,7 +436,8 @@ user_settings_text = {
 * b:id/@username/pm (b: means leech by bot) (id or username of the chat or write pm means private message so bot will send the files in private to you) when you should use b:(leech by bot)? When your default settings is leech by user and you want to leech by bot for specific task.
 * u:id/@username(u: means leech by user) This incase OWNER added USER_STRING_SESSION.
 * h:id/@username(hybrid leech) h: to upload files by bot and user based on file size.
-* id/@username|topic_id(leech in specific chat and topic) add | without space and write topic id after chat id or username. Timeout: 60 sec""",
+* id/@username|topic_id(leech in specific chat and topic) add | without space and write topic id after chat id or username. Timeout: 60 sec
+* Required for leech commands used in group chats while BOT_PM is disabled by the owner; otherwise the command is refused until a destination is set.""",
     "LEECH_FILENAME_PREFIX": r"Send Leech Filename Prefix. You can add HTML tags. Example: <code>@mychannel</code>. Timeout: 60 sec",
     "THUMBNAIL_LAYOUT": "Send thumbnail layout (widthxheight, 2x2, 3x3, 2x4, 4x4, ...). Example: 3x3. Timeout: 60 sec",
     "RCLONE_PATH": "Send Rclone Path. If you want to use your rclone config edit using owner/user config from usetting or add mt: before rclone path. Example mt:remote:folder. Timeout: 60 sec",
@@ -446,6 +447,10 @@ user_settings_text = {
     "UPLOAD_PATHS": "Send Dict of keys that have path values. Example: {'path 1': 'remote:rclonefolder', 'path 2': 'gdrive1 id', 'path 3': 'tg chat id', 'path 4': 'mt:remote:', 'path 5': b:@username} . Timeout: 60 sec",
     "EXCLUDED_EXTENSIONS": "Send excluded extensions separated by space without dot at beginning. Timeout: 60 sec",
     "INCLUDED_EXTENSIONS": "Send included extensions separated by space without dot at beginning. Timeout: 60 sec",
+    "FILES_PER_BATCH": "Send how many files to download/upload per batch. 0 disables batching. Timeout: 60 sec",
+    "BATCH_MAX_SIZE": "Send max batch size (e.g. 2gb). 0 or off disables the size limit. Timeout: 60 sec",
+    "TORRENT_FILE_TYPES": "Send file types to include in batches: video, audio, photo, document, apps. Empty/all disables the filter. Timeout: 60 sec",
+    "SKIP_UPLOADED_FILES": "Use the toggle button to skip files already uploaded for this torrent.",
     "NAME_SUBSTITUTE": r"""Word Subtitions. You can add pattern instead of normal text. Timeout: 60 sec
 NOTE: You must add \ before any character, those are the characters: \^$.|?*+()[]{}-
 Example: script/code/s | mirror/leech | tea/ /s | clone | cpu/ | \[mltb\]/mltb | \\text\\/text/s

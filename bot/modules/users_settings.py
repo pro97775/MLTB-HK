@@ -19,6 +19,8 @@ from .. import (
 from ..core.config_manager import Config
 from ..core.telegram_manager import TgClient
 from ..helper.ext_utils.db_handler import database
+from ..helper.ext_utils.file_types import normalize_types
+from ..helper.ext_utils.status_utils import get_readable_file_size
 from ..helper.ext_utils.media_utils import create_thumb
 from ..helper.telegram_helper.button_build import ButtonMaker
 from ..helper.ext_utils.help_messages import user_settings_text
@@ -47,6 +49,12 @@ leech_options = [
 rclone_options = ["RCLONE_CONFIG", "RCLONE_PATH", "RCLONE_FLAGS"]
 gdrive_options = ["TOKEN_PICKLE", "GDRIVE_ID", "INDEX_URL"]
 uploaders_options = ["BUZZHEAVIER_ACCOUNT_ID", "BUZZHEAVIER_FOLDER_ID"]
+torrent_options = [
+    "FILES_PER_BATCH",
+    "BATCH_MAX_SIZE",
+    "TORRENT_FILE_TYPES",
+    "SKIP_UPLOADED_FILES",
+]
 
 
 async def get_user_settings(from_user, stype="main"):
@@ -290,6 +298,60 @@ Stop Duplicate is <b>{sd_msg}</b>"""
         text = f"""<u>Uploaders Settings for {name}</u>
 Buzzheavier Account ID: {bh_acc}
 Buzzheavier Folder ID: {bh_fol}"""
+    elif stype == "torrent":
+        files_per_batch = (
+            user_dict["FILES_PER_BATCH"]
+            if "FILES_PER_BATCH" in user_dict
+            else Config.FILES_PER_BATCH
+        )
+        batch_max_size = (
+            user_dict["BATCH_MAX_SIZE"]
+            if "BATCH_MAX_SIZE" in user_dict
+            else Config.BATCH_MAX_SIZE
+        )
+        try:
+            max_size_value = int(batch_max_size or 0)
+        except (TypeError, ValueError):
+            max_size_value = 0
+        max_size_text = (
+            get_readable_file_size(max_size_value) if max_size_value else "Off"
+        )
+        raw_types = (
+            user_dict.get("TORRENT_FILE_TYPES")
+            if "TORRENT_FILE_TYPES" in user_dict
+            else Config.TORRENT_FILE_TYPES
+        )
+        file_types = normalize_types(raw_types)
+        types_text = ", ".join(file_types) if file_types else "All files"
+        skip_uploaded = (
+            user_dict.get("SKIP_UPLOADED_FILES")
+            if "SKIP_UPLOADED_FILES" in user_dict
+            else Config.SKIP_UPLOADED_FILES
+        )
+        if isinstance(skip_uploaded, str):
+            skip_uploaded = skip_uploaded.lower() in ("true", "1", "yes", "on")
+        skip_enabled = bool(skip_uploaded)
+
+        buttons.data_button(
+            "Files per Batch", f"userset {user_id} menu FILES_PER_BATCH"
+        )
+        buttons.data_button(
+            "Batch Max Size", f"userset {user_id} menu BATCH_MAX_SIZE"
+        )
+        buttons.data_button(
+            "Torrent File Types", f"userset {user_id} menu TORRENT_FILE_TYPES"
+        )
+        buttons.data_button(
+            f"Skip Uploaded: {'ON' if skip_enabled else 'OFF'}",
+            f"userset {user_id} tog SKIP_UPLOADED_FILES {'f' if skip_enabled else 't'}",
+        )
+        buttons.data_button("Back", f"userset {user_id} back")
+        buttons.data_button("Close", f"userset {user_id} close")
+        text = f"""<u>Torrent Batching for {name}</u>
+Files per Batch: {files_per_batch or "Off"}
+Batch Max Size: {max_size_text}
+Torrent File Types: {types_text}
+Skip Uploaded Files: {"ON" if skip_enabled else "OFF"}"""
     else:
         buttons.data_button("Leech", f"userset {user_id} leech")
         buttons.data_button("Rclone", f"userset {user_id} rclone")
@@ -325,6 +387,7 @@ Buzzheavier Folder ID: {bh_fol}"""
         buttons.data_button(
             "Excluded Extensions", f"userset {user_id} menu EXCLUDED_EXTENSIONS"
         )
+        buttons.data_button("Torrent Batching", f"userset {user_id} torrent")
         if user_dict.get("EXCLUDED_EXTENSIONS", False):
             ex_ex = user_dict["EXCLUDED_EXTENSIONS"]
         elif "EXCLUDED_EXTENSIONS" not in user_dict:
@@ -495,6 +558,28 @@ async def set_option(_, message, option):
         for x in fx:
             x = x.lstrip(".")
             value.append(x.strip().lower())
+    elif option == "FILES_PER_BATCH":
+        try:
+            value = max(0, int(value))
+        except (TypeError, ValueError):
+            await send_message(message, "Files per batch must be a number.")
+            return
+    elif option == "BATCH_MAX_SIZE":
+        lowered = value.strip().lower()
+        if lowered in ("", "0", "off", "none"):
+            value = 0
+        elif value.isdigit():
+            value = int(value)
+        else:
+            value = int(get_size_bytes(value) or 0)
+            if value <= 0:
+                await send_message(
+                    message,
+                    "Send bytes (e.g. 5000000000) or a size like 100gb / 800mb. 0 disables the cap.",
+                )
+                return
+    elif option == "TORRENT_FILE_TYPES":
+        value = normalize_types(value)
     elif option == "INDEX_URL":
         value = value
     elif option in [
@@ -554,6 +639,8 @@ async def get_menu(option, message, user_id):
         back_to = "gdrive"
     elif option in uploaders_options:
         back_to = "uploaders"
+    elif option in torrent_options:
+        back_to = "torrent"
     else:
         back_to = "back"
     buttons.data_button("Back", f"userset {user_id} {back_to}")
@@ -675,7 +762,7 @@ async def edit_user_settings(client, query):
         await query.answer("Not Yours!", show_alert=True)
     elif data[2] == "setevent":
         await query.answer()
-    elif data[2] in ["leech", "gdrive", "rclone", "uploaders"]:
+    elif data[2] in ["leech", "gdrive", "rclone", "uploaders", "torrent"]:
         await query.answer()
         await update_user_settings(query, data[2])
     elif data[2] == "menu":
@@ -686,6 +773,8 @@ async def edit_user_settings(client, query):
         update_user_ldata(user_id, data[3], data[4] == "t")
         if data[3] == "STOP_DUPLICATE":
             back_to = "gdrive"
+        elif data[3] == "SKIP_UPLOADED_FILES":
+            back_to = "torrent"
         elif data[3] == "USER_TOKENS":
             back_to = "main"
         else:

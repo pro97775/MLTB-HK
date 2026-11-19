@@ -1,6 +1,5 @@
 from asyncio import sleep
 from pyrogram.errors import FloodWait, FloodPremiumWait
-from pyrogram.types import Message
 from re import match as re_match
 from time import time
 
@@ -10,10 +9,6 @@ from ...core.telegram_manager import TgClient
 from ..ext_utils.bot_utils import SetInterval
 from ..ext_utils.exceptions import TgLinkException
 from ..ext_utils.status_utils import get_readable_message
-from .rich_message_compat import rich_keyword
-
-_REPLY_RICH_KEYWORD = rich_keyword(getattr(Message, "reply_rich", None))
-_EDIT_RICH_KEYWORD = rich_keyword(getattr(Message, "edit_text", None))
 
 
 async def send_message(message, text, buttons=None, block=True):
@@ -37,7 +32,7 @@ async def send_message(message, text, buttons=None, block=True):
 async def send_rich_message(message, rich_input, buttons=None, block=True):
     try:
         return await message.reply_rich(
-            **{_REPLY_RICH_KEYWORD: rich_input},
+            rich_message=rich_input,
             disable_notification=True,
             reply_markup=buttons,
         )
@@ -57,7 +52,7 @@ async def edit_message(message, text=None, buttons=None, block=True, rich_messag
         return await message.edit(
             text=text,
             reply_markup=buttons,
-            **{_EDIT_RICH_KEYWORD: rich_message},
+            rich_message=rich_message,
         )
     except FloodWait as f:
         LOGGER.warning(str(f))

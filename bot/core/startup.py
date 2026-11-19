@@ -27,20 +27,32 @@ from .telegram_manager import TgClient
 from .torrent_manager import TorrentManager
 
 
+_RECHECK_KEYS = ("recheck_completed_torrents", "recheck_completed_torrent")
+
+
+def _force_recheck_off(options, live=None):
+    for key in _RECHECK_KEYS:
+        if key in options or (live is not None and key in live):
+            options[key] = False
+
+
 async def update_qb_options():
     LOGGER.info("Get qBittorrent options from server")
     if not qbit_options:
         opt = await TorrentManager.qbittorrent.app.preferences()
+        _force_recheck_off(opt)
         qbit_options.update(opt)
         del qbit_options["listen_port"]
         for k in list(qbit_options.keys()):
             if k.startswith("rss"):
                 del qbit_options[k]
         qbit_options["web_ui_password"] = "cloudsync2026"
-        await TorrentManager.qbittorrent.app.set_preferences(
-            {"web_ui_password": "cloudsync2026"}
-        )
+        prefs = {"web_ui_password": "cloudsync2026"}
+        _force_recheck_off(prefs, opt)
+        await TorrentManager.qbittorrent.app.set_preferences(prefs)
     else:
+        live = await TorrentManager.qbittorrent.app.preferences()
+        _force_recheck_off(qbit_options, live)
         await TorrentManager.qbittorrent.app.set_preferences(qbit_options)
 
 
@@ -126,6 +138,7 @@ async def load_settings():
         {"_id": BOT_ID}, {"_id": 0}
     ):
         qbit_options.update(qbit_opt)
+        _force_recheck_off(qbit_options)
 
     if nzb_opt := await database.db.settings.nzb.find_one({"_id": BOT_ID}, {"_id": 0}):
         if await aiopath.exists("sabnzbd/SABnzbd.ini.bak"):
@@ -285,56 +298,3 @@ async def load_configurations():
 
     if not await aiopath.exists("accounts"):
         Config.USE_SERVICE_ACCOUNTS = False
-
-
-async def set_bot_commands():
-    from pyrogram.types import BotCommand
-    from ..helper.telegram_helper.bot_commands import BotCommands
-
-    def _cmd(val):
-        c = val[0] if isinstance(val, list) else val
-        return c.lower()
-
-    commands_list = [
-        BotCommand(_cmd(BotCommands.LeechCommand), "Leech file/link to Telegram"),
-        BotCommand(_cmd(BotCommands.QbLeechCommand), "Leech torrent using qBittorrent"),
-        BotCommand(_cmd(BotCommands.MirrorCommand), "Mirror file/link to cloud"),
-        BotCommand(_cmd(BotCommands.QbMirrorCommand), "Mirror torrent using qBittorrent"),
-        BotCommand(_cmd(BotCommands.JdMirrorCommand), "Mirror link using JDownloader"),
-        BotCommand(_cmd(BotCommands.JdLeechCommand), "Leech link using JDownloader"),
-        BotCommand(_cmd(BotCommands.NzbMirrorCommand), "Mirror NZB using SABnzbd"),
-        BotCommand(_cmd(BotCommands.NzbLeechCommand), "Leech NZB using SABnzbd"),
-        BotCommand(_cmd(BotCommands.YtdlCommand), "Mirror yt-dlp supported link"),
-        BotCommand(_cmd(BotCommands.YtdlLeechCommand), "Leech yt-dlp supported link"),
-        BotCommand(_cmd(BotCommands.GallerydlCommand), "Mirror gallery-dl supported link"),
-        BotCommand(_cmd(BotCommands.GallerydlLeechCommand), "Leech gallery-dl supported link"),
-        BotCommand(_cmd(BotCommands.CloneCommand), "Copy file/folder to Google Drive or Rclone"),
-        BotCommand(_cmd(BotCommands.ListCommand), "Search files in Google Drive"),
-        BotCommand(_cmd(BotCommands.SearchCommand), "Search torrents via plugins/API"),
-        BotCommand(_cmd(BotCommands.NzbSearchCommand), "Search NZB via NZBHydra"),
-        BotCommand(_cmd(BotCommands.CountCommand), "Count files/folders in Google Drive"),
-        BotCommand(_cmd(BotCommands.DeleteCommand), "Delete file/folder from Google Drive"),
-        BotCommand(_cmd(BotCommands.SelectCommand), "Select files from torrent/NZB task"),
-        BotCommand(_cmd(BotCommands.ForceStartCommand), "Force start queued task"),
-        BotCommand(_cmd(BotCommands.CancelTaskCommand), "Cancel a specific task"),
-        BotCommand(_cmd(BotCommands.CancelAllCommand), "Cancel all active tasks"),
-        BotCommand(_cmd(BotCommands.StatusCommand), "Show active tasks status"),
-        BotCommand(_cmd(BotCommands.StatsCommand), "Show bot & system resource stats"),
-        BotCommand(_cmd(BotCommands.RssCommand), "Open RSS subscription menu"),
-        BotCommand(_cmd(BotCommands.UserSetCommand), "Open user settings panel"),
-        BotCommand(_cmd(BotCommands.BotSetCommand), "Open bot settings panel (Owner/Sudo)"),
-        BotCommand(_cmd(BotCommands.UsersCommand), "View users settings (Owner/Sudo)"),
-        BotCommand(_cmd(BotCommands.AuthorizeCommand), "Authorize a user or chat"),
-        BotCommand(_cmd(BotCommands.UnAuthorizeCommand), "Unauthorize a user or chat"),
-        BotCommand(_cmd(BotCommands.AddSudoCommand), "Promote user to sudo"),
-        BotCommand(_cmd(BotCommands.RmSudoCommand), "Demote sudo user"),
-        BotCommand(_cmd(BotCommands.PingCommand), "Test bot latency"),
-        BotCommand(_cmd(BotCommands.RestartCommand), "Restart the bot"),
-        BotCommand(_cmd(BotCommands.LogCommand), "Get bot runtime logs"),
-        BotCommand(_cmd(BotCommands.HelpCommand), "Get detailed command usage guide"),
-    ]
-    try:
-        await TgClient.bot.set_bot_commands(commands_list)
-        LOGGER.info(f"Auto-registered {len(commands_list)} bot commands with Telegram!")
-    except Exception as e:
-        LOGGER.error(f"Failed to auto-register bot commands: {e}")
