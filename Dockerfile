@@ -1,4 +1,4 @@
-FROM pro97775/mltb-prebuild:latest1
+FROM pro97775/mltb-prebuild:latest
 
 WORKDIR /app
 RUN chmod 777 /app
